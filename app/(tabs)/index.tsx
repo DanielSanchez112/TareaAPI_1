@@ -1,98 +1,347 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  ScrollView, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert,
+  ActivityIndicator,
+  RefreshControl
+} from 'react-native';
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { TMDBService, TMDBConfiguration, Movie, TMDBError } from '@/services/tmdbService';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [configuration, setConfiguration] = useState<TMDBConfiguration | null>(null);
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
+  useEffect(() => {
+    loadConfiguration();
+    loadPopularMovies();
+  }, []);
+
+  const loadConfiguration = async () => {
+    try {
+      setError(null);
+      // if (!TMDBService.isAPIKeyConfigured()) {
+      //   setError('API Key no configurada. Por favor, configura tu TMDB_API_KEY en el archivo .env');
+      //   return;
+      // }
+
+      const config = await TMDBService.getConfiguration();
+      setConfiguration(config);
+    } catch (error) {
+      console.error('Error loading configuration:', error);
+      if (error instanceof TMDBError) {
+        setError(`Error de configuración: ${error.message}`);
+      } else {
+        setError('Error inesperado al cargar la configuración');
+      }
+    }
+  };
+
+  const loadPopularMovies = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // if (!TMDBService.isAPIKeyConfigured()) {
+      //   setError('API Key no configurada');
+      //   return;
+      // }
+
+      const response = await TMDBService.getPopularMovies();
+      setMovies(response.results.slice(0, 10));
+    } catch (error) {
+      console.error('Error loading popular movies:', error);
+      if (error instanceof TMDBError) {
+        setError(`Error al cargar películas: ${error.message}`);
+      } else {
+        setError('Error inesperado al cargar películas');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const searchMovies = async () => {
+    if (!searchQuery.trim()) {
+      Alert.alert('Error', 'Por favor ingresa un término de búsqueda');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await TMDBService.searchMovies(searchQuery);
+      setMovies(response.results.slice(0, 10));
+      
+      if (response.results.length === 0) {
+        Alert.alert('Sin resultados', 'No se encontraron películas con ese término');
+      }
+    } catch (error) {
+      console.error('Error searching movies:', error);
+      if (error instanceof TMDBError) {
+        Alert.alert('Error de búsqueda', error.message);
+      } else {
+        Alert.alert('Error', 'Error inesperado al buscar películas');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadConfiguration();
+    await loadPopularMovies();
+    setRefreshing(false);
+  };
+
+  const getImageUrl = (path: string | null): string | null => {
+    if (!configuration || !path) return null;
+    return TMDBService.buildImageUrl(configuration, path, 'w300');
+  };
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <ThemedView style={styles.header}>
+        <ThemedText type="title">TMDB Movie App</ThemedText>
+        <ThemedText type="subtitle">The Movie Database API Demo</ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
+
+      {error && (
+        <ThemedView style={styles.errorContainer}>
+          <ThemedText style={styles.errorText}>{error}</ThemedText>
+        </ThemedView>
+      )}
+
+      {/* Sección de búsqueda */}
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle" style={styles.sectionTitle}>Buscar Películas</ThemedText>
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar películas..."
+            placeholderTextColor="#666"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={searchMovies}
+          />
+          <TouchableOpacity 
+            style={styles.searchButton} 
+            onPress={searchMovies}
+            disabled={loading}
+          >
+            <ThemedText style={styles.searchButtonText}>
+              {loading ? 'Buscando...' : 'Buscar'}
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
       </ThemedView>
-    </ParallaxScrollView>
+
+      {/* Loading indicator */}
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0066cc" />
+          <ThemedText>Cargando...</ThemedText>
+        </View>
+      )}
+
+      {/* Lista de películas */}
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle" style={styles.sectionTitle}>
+          {searchQuery ? `Resultados para "${searchQuery}"` : 'Películas Populares'}
+        </ThemedText>
+        
+        {movies.map((movie) => (
+          <ThemedView key={movie.id} style={styles.movieCard}>
+            <View style={styles.movieContent}>
+              {getImageUrl(movie.poster_path) ? (
+                <Image
+                  source={{ uri: getImageUrl(movie.poster_path)! }}
+                  style={styles.moviePoster}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.noPosterContainer}>
+                  <ThemedText style={styles.noPosterText}>Sin imagen</ThemedText>
+                </View>
+              )}
+              
+              <View style={styles.movieDetails}>
+                <ThemedText type="defaultSemiBold" style={styles.movieTitle}>
+                  {movie.title}
+                </ThemedText>
+                
+                <ThemedText style={styles.movieInfo}>
+                  📅 {movie.release_date || 'Fecha no disponible'}
+                </ThemedText>
+                
+                <ThemedText style={styles.movieInfo}>
+                  ⭐ {movie.vote_average.toFixed(1)}/10 ({movie.vote_count} votos)
+                </ThemedText>
+                
+                <ThemedText style={styles.movieInfo}>
+                  🌟 Popularidad: {movie.popularity.toFixed(0)}
+                </ThemedText>
+                
+                <ThemedText style={styles.movieInfo}>
+                  🌍 Idioma: {movie.original_language.toUpperCase()}
+                </ThemedText>
+                
+                {movie.overview && (
+                  <ThemedText style={styles.movieOverview} numberOfLines={3}>
+                    {movie.overview}
+                  </ThemedText>
+                )}
+              </View>
+            </View>
+          </ThemedView>
+        ))}
+        
+        {!loading && movies.length === 0 && !error && (
+          <ThemedView style={styles.emptyContainer}>
+            <ThemedText>No hay películas para mostrar</ThemedText>
+          </ThemedView>
+        )}
+      </ThemedView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    padding: 20,
     alignItems: 'center',
+    backgroundColor: '#0066cc',
+  },
+  section: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: 'white',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  errorContainer: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f44336',
+  },
+  errorText: {
+    color: '#c62828',
+    fontSize: 14,
+  },
+  sectionTitle: {
+    color: '#000000',
+    fontWeight: 'bold',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    marginTop: 8,
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  searchInput: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'white',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  searchButton: {
+    backgroundColor: '#0066cc',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  searchButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  movieCard: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  movieContent: {
+    flexDirection: 'row',
+  },
+  moviePoster: {
+    width: 80,
+    height: 120,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  noPosterContainer: {
+    width: 80,
+    height: 120,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noPosterText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  movieDetails: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
+  movieTitle: {
+    fontSize: 16,
+    marginBottom: 4,
+    color: '#333',
+  },
+  movieInfo: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  movieOverview: {
+    fontSize: 12,
+    color: '#555',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
   },
 });
